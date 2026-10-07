@@ -1,0 +1,45 @@
+# Home Assistant package (packages/z906_mediaplayer.yaml): the Z906 as a media player.
+# Entity IDs match z906.yaml (friendly_name "Z906"). Power on/off: the console decides (IR / power button) - use
+# your own IR script here, e.g. a Broadlink/ESPHome IR sender that presses "power" on the Z906 remote.
+media_player:
+  - platform: universal
+    name: Z906
+    unique_id: z906_mediaplayer
+    device_class: speaker
+    children: []
+    state_template: >
+      {% if is_state('binary_sensor.z906_power', 'on') %}on
+      {% elif states('binary_sensor.z906_power') in ['unavailable', 'unknown'] %}unavailable
+      {% else %}off{% endif %}
+    attributes:
+      volume_level: sensor.z906_volume_level
+      source: select.z906_input
+      source_list: select.z906_input|options
+    commands:
+      # turn_on / turn_off: add your IR "power" script here
+      # turn_on:
+      #   action: script.turn_on
+      #   target: {entity_id: script.z906_power}
+      volume_set:
+        action: number.set_value
+        target: {entity_id: number.z906_volume}
+        data: {value: "{{ (volume_level * 100) | round(0) }}"}
+      volume_up:
+        action: number.set_value
+        target: {entity_id: number.z906_volume}
+        data: {value: "{{ [states('number.z906_volume') | float(0) + 3, 100] | min | round(0) }}"}
+      volume_down:
+        action: number.set_value
+        target: {entity_id: number.z906_volume}
+        data: {value: "{{ [states('number.z906_volume') | float(0) - 3, 0] | max | round(0) }}"}
+      select_source:
+        action: select.select_option
+        target: {entity_id: select.z906_input}
+        data: {option: "{{ source }}"}
+
+template:
+  - sensor:
+      - name: Z906 Volume Level
+        unique_id: z906_volume_level
+        state: "{{ (states('number.z906_volume') | float(0) / 100) | round(2) }}"
+        availability: "{{ has_value('number.z906_volume') }}"

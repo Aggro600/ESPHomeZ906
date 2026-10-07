@@ -1,0 +1,79 @@
+# Example configuration - ESP32 between the Z906 console and the amplifier (DE-15).
+# Wiring: see README.md. Secrets: wifi_ssid, wifi_password, api_key_z906, ota_password.
+esphome:
+  name: z906
+  friendly_name: Z906
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+external_components:
+  - source: github://Aggro600/ESPHome-Z906
+    components: [z906]
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key_z906
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap: {}
+
+captive_portal:
+
+z906:
+  id: z
+  console_rx_pin: 16   # console pin 13
+  console_tx_pin: 17   # console pin 12
+  amp_rx_pin: 22       # amplifier pin 12
+  amp_tx_pin: 23       # amplifier pin 13
+  volume:
+    name: "Volume"        # 0..100 %, 100 % = level 43
+  subwoofer:
+    name: "Volume Bass"
+  center:
+    name: "Volume Center"
+  rear:
+    name: "Volume Rear"
+  input:
+    name: "Input"         # Input 1 .. Input 6
+  effect:
+    name: "Effect"        # 3D / 2.1 / 4.1 / None (inputs 1, 2, 6 only)
+  power:
+    name: "Power"
+  read_status:
+    name: "Read status"
+  # Troubleshooting: log every byte between console and amplifier, keep the first 3 minutes after boot in RAM
+  # debug_traffic: true
+  # dump_capture:
+  #   name: "Dump capture"
+
+# Optional diagnostics: voltages on the console pins (not used for control)
+sensor:
+  - platform: adc
+    pin: GPIO32
+    name: "Console pin 8"
+    attenuation: 12db
+    update_interval: 5s
+    entity_category: diagnostic
+  - platform: adc
+    pin: GPIO34
+    name: "Console pin 9"
+    attenuation: 12db
+    update_interval: 5s
+    entity_category: diagnostic
+  - platform: adc
+    pin: GPIO35
+    name: "Console pin 15"
+    attenuation: 12db
+    update_interval: 5s
+    entity_category: diagnostic
