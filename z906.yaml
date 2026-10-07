@@ -10,7 +10,7 @@ esp32:
     type: esp-idf
 
 external_components:
-  - source: github://Aggro600/ESPHome-Z906
+  - source: github://Aggro600/ESPHomeZ906
     components: [z906]
 
 logger:
