@@ -34,7 +34,7 @@ CONF_DEBUG_TRAFFIC = "debug_traffic"
 CONF_DUMP_CAPTURE = "dump_capture"
 
 # Order = index in the C++ code
-# Like the old MQTT project (Lautsprecher WZ) - automations/dashboards use these option names
+# Like the old MQTT project (logi_z906_wifi) - automations/dashboards use these option names
 EINGAENGE = ["Input 1", "Input 2", "Input 3", "Input 4", "Input 5", "Input 6"]
 EFFEKTE = ["3D", "2.1", "4.1", "None"]
 PEGEL = [(CONF_VOLUME, 0, "mdi:volume-high"), (CONF_SUBWOOFER, 1, "mdi:speaker"),
@@ -55,7 +55,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_READ_STATUS): button.button_schema(Z906StatusButton, icon="mdi:refresh"),
         # Write every byte in both directions to the log (debugging)
         cv.Optional(CONF_DEBUG_TRAFFIC, default=False): cv.boolean,
-        # Button: write the capture of the first 3 minutes after start to the log
+        # Button: write the capture (last 300 lines of traffic) to the log
         cv.Optional(CONF_DUMP_CAPTURE): button.button_schema(Z906MitschnittButton, icon="mdi:text-box-search"),
     }
 ).extend(cv.COMPONENT_SCHEMA)

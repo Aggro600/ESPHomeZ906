@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Logitech Z906",
+        "description": "Choose the ESPHome device of your Z906 bridge. The serial link cannot switch the amplifier on or off; for that, optionally choose entities such as IR buttons.",
+        "data": {
+          "device_id": "ESPHome device",
+          "power_on_entity": "Entity that switches on",
+          "power_off_entity": "Entity that switches off"
+        }
+      }
+    },
+    "error": {
+      "not_z906": "This device has no Z906 entities named Power, Volume and Input."
+    },
+    "abort": {
+      "already_configured": "This device is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Logitech Z906",
+        "data": {
+          "power_on_entity": "Entity that switches on",
+          "power_off_entity": "Entity that switches off"
+        }
+      }
+    }
+  }
+}

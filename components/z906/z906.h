@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 // Logitech Z906: ESP32 between console and amplifier. See __init__.py.
 #include "esphome/core/component.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
@@ -102,6 +103,16 @@ class Z906 : public Component {
   int k_len_{0};
   uint32_t k_frame_t0_{0};
   bool gueltig_(int richtung, uint8_t b) const;
+  // Wake guard (2026-11-01): between the console's wake byte (30) and its power-on (11), a level command reaching
+  // the amp makes the console abort the start and fall back to standby (reproduced: knob turned right after
+  // switching on, or a level command from HA). Level steps from the console are dropped in this window (lost on
+  // purpose - user decision); commands from HA wait. Only this change on top of the 2026-10-31 state: the echo pass
+  // and the ring capture of the same day broke input 4 (amp restarted) and were taken out again.
+  bool k_standby_{false};    // console in standby: after its 34 (sent on boot and when going to standby) or 36
+  uint32_t weck_bis_{0};     // window open until then (0 = closed)
+  uint32_t weck_an_{0};      // time of the power-on byte (11) inside the window
+  bool weckfenster_(uint32_t jetzt) const { return weck_bis_ != 0 && (int32_t) (jetzt - weck_bis_) < 0; }
+  void weckfenster_pruefen_(uint32_t jetzt);
   size_t ausgabe_pos_{0};
   bool ausgabe_laeuft_{false};
   void einzelbyte_(uint8_t b);

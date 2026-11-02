@@ -74,9 +74,13 @@ void Z906::task_schleife_() {
       mb_eigene_ = false;
       eigene_antwort_offen_ = false;
     }
-    // Commands from Home Assistant: only when the line is idle and no reply is pending
+    weckfenster_pruefen_(jetzt);
+    // Commands from Home Assistant: only when the line is idle, no reply is pending and the console is not waking up
     Befehl c;
-    if (mb_pos_ < 0 && (int32_t) (jetzt - antwort_bis_) >= 0 && jetzt - letzter_verkehr_ >= STILLE_MS &&
+    // Nach dem Einschalten (11) 4 s nichts Eigenes: die Konsole fragt dann selbst den Status ab - unser 34 genau
+    // dazwischen brach ihren Start ab (2026-11-01 abends, nach dem Flashen war der Pegel unbekannt -> Abfrage)
+    const bool nach_an = weck_an_ != 0 && jetzt - weck_an_ < 4000;
+    if (mb_pos_ < 0 && weck_bis_ == 0 && !nach_an && (int32_t) (jetzt - antwort_bis_) >= 0 && jetzt - letzter_verkehr_ >= STILLE_MS &&
         xQueueReceive(befehle_, &c, 0) == pdTRUE) {
       uart_write_bytes(UART_V, (const char *) c.b, c.n);
       letzter_verkehr_ = jetzt;
@@ -166,6 +170,25 @@ void Z906::von_konsole_(uint8_t b) {
     k_pos_ = 0;
     k_frame_t0_ = jetzt;
   }
+  // Wake guard (see header)
+  // 34 = Status-Abfrage: im Standby beim Konsolenstart, aber auch direkt NACH dem Einschalten (11). Dann ist die
+  // Konsole an - sonst oeffnete das naechste 30 ein neues Weckfenster, verwarf das Hochfahren der Lautstaerke
+  // (08 ...), die Konsole bekam kein Echo und startete in einer Schleife neu (2026-11-01 abends).
+  if (b == 0x36 || (b == 0x34 && power_.load() != 1)) k_standby_ = true;
+  if (b == 0x30 && (k_standby_ || power_.load() == 0) && weck_bis_ == 0) {
+    weck_bis_ = jetzt + 5000;
+    weck_an_ = 0;
+  }
+  if (weckfenster_(jetzt)) {
+    if (b >= 0x08 && b <= 0x0F) {
+      if (mitschnitt_) verlauf_merken_("Startschutz: Pegel-Schritt verworfen");
+      return;
+    }
+    if (b == 0x11 && weck_an_ == 0) {
+      weck_an_ = jetzt;
+      k_standby_ = false;
+    }
+  }
   uart_write_bytes(UART_V, (const char *) &b, 1);
   weitergeleitet_k_++;
   if (mitschnitt_) mitschnitt_byte_(0, b);
@@ -174,6 +197,16 @@ void Z906::von_konsole_(uint8_t b) {
   if (power_.load() < 0 && b != 0x34 && b != 0xAA) power_ = 1;
   // requests with an AA reply: we must not send anything until it is complete
   if (b == 0x34 || b == 0x31 || b == 0x25 || b == 0x2F) antwort_bis_ = jetzt + ANTWORT_MS;
+}
+
+// ---------------------------------------------------------------- Wake guard (see header)
+
+void Z906::weckfenster_pruefen_(uint32_t jetzt) {
+  if (weck_bis_ == 0) return;
+  const bool an = weck_an_ != 0 && jetzt - weck_an_ > 500;   // power-on incl. the restore bytes after it is through
+  if (!an && weckfenster_(jetzt)) return;
+  weck_bis_ = 0;
+  if (mitschnitt_) verlauf_merken_(an ? "Startschutz: Konsole an" : "Startschutz: abgelaufen ohne Einschalten");
 }
 
 // ---------------------------------------------------------------- Reading along
@@ -237,8 +270,12 @@ void Z906::einzelbyte_(uint8_t b) {
       if (i >= 0) effekt_[i] = (int8_t) e;
       return;
     }
-  if (b == 0x11) power_ = 1;        // power on (also "headphones disconnected" - the amp is on in both cases)
-  else if (b == 0x36) power_ = 0;   // speakers off + save = power off (0x10 is headphones, NOT off)
+  if (b == 0x11) {   // power on (also "headphones disconnected" - the amp is on in both cases)
+    power_ = 1;
+    k_standby_ = false;
+  } else if (b == 0x36) {
+    power_ = 0;   // speakers off + save = power off (0x10 is headphones, NOT off)
+  }
 }
 
 void Z906::antwort_fertig_() {

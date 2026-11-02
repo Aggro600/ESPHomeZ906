@@ -1,8 +1,18 @@
-# Example configuration - ESP32 between the Z906 console and the amplifier (DE-15).
-# Wiring: see README.md. Secrets: wifi_ssid, wifi_password, api_key_z906, ota_password.
+# Logitech Z906 on Wi-Fi – an ESP32 sits between the console and the amplifier (DE-15 cable).
+# Volume, subwoofer/centre/rear level, input, effect and power state in Home Assistant; the console keeps working
+# as usual (all bytes are passed through in both directions, also while the console starts up).
+#
+# Wiring (like github.com/Jupsi/logi_z906_wifi):
+#   console pin 12   -> GPIO17 (TX to the console)      console pin 13   -> GPIO16 (RX from the console)
+#   amplifier pin 12 -> GPIO22 (RX from the amplifier)  amplifier pin 13 -> GPIO23 (TX to the amplifier)
+#   GND -> GND. Optional, display only: pin 8 -> GPIO32, pin 9 -> GPIO34, pin 15 -> GPIO35.
+# The ESP32 needs its own power supply (USB), separate from the amplifier.
+#
+# Put this file into your ESPHome folder (e.g. as logi-z906.yaml) and the folder components/z906 next to it –
+# or take the component straight from GitHub (see "external_components" below).
 esphome:
-  name: z906
-  friendly_name: Z906
+  name: logi-z906
+  friendly_name: Logitech Z906
 
 esp32:
   board: esp32dev
@@ -12,8 +22,10 @@ esp32:
 external_components:
   - source: github://Aggro600/ESPHomeZ906
     components: [z906]
+    refresh: 0s
 
 logger:
+  level: INFO
 
 api:
   encryption:
@@ -21,7 +33,7 @@ api:
 
 ota:
   - platform: esphome
-    password: !secret ota_password
+    password: !secret ota_pw
 
 wifi:
   ssid: !secret wifi_ssid
@@ -32,12 +44,12 @@ captive_portal:
 
 z906:
   id: z
-  console_rx_pin: 16   # console pin 13
-  console_tx_pin: 17   # console pin 12
-  amp_rx_pin: 22       # amplifier pin 12
-  amp_tx_pin: 23       # amplifier pin 13
+  console_rx_pin: 16
+  console_tx_pin: 17
+  amp_rx_pin: 22
+  amp_tx_pin: 23
   volume:
-    name: "Volume"        # 0..100 %, 100 % = level 43
+    name: "Volume"
   subwoofer:
     name: "Volume Bass"
   center:
@@ -45,35 +57,21 @@ z906:
   rear:
     name: "Volume Rear"
   input:
-    name: "Input"         # Input 1 .. Input 6
+    name: "Input"
   effect:
-    name: "Effect"        # 3D / 2.1 / 4.1 / None (inputs 1, 2, 6 only)
+    name: "Effect"
   power:
     name: "Power"
   read_status:
     name: "Read status"
-  # Troubleshooting: log every byte between console and amplifier, keep the first 3 minutes after boot in RAM
-  # debug_traffic: true
-  # dump_capture:
-  #   name: "Dump capture"
+  # Troubleshooting: log every byte between console and amplifier
+  debug_traffic: false
+  # Troubleshooting: button that prints the capture of the first 3 minutes after start-up
+  dump_capture:
+    name: "Dump capture"
 
-# Optional diagnostics: voltages on the console pins (not used for control)
 sensor:
-  - platform: adc
-    pin: GPIO32
-    name: "Console pin 8"
-    attenuation: 12db
-    update_interval: 5s
-    entity_category: diagnostic
-  - platform: adc
-    pin: GPIO34
-    name: "Console pin 9"
-    attenuation: 12db
-    update_interval: 5s
-    entity_category: diagnostic
-  - platform: adc
-    pin: GPIO35
-    name: "Console pin 15"
-    attenuation: 12db
-    update_interval: 5s
+  - platform: wifi_signal
+    name: "Wi-Fi signal"
+    update_interval: 60s
     entity_category: diagnostic

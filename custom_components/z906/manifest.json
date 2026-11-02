@@ -1,0 +1,17 @@
+{
+  "domain": "z906",
+  "name": "Logitech Z906",
+  "codeowners": [
+    "@Aggro600"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "esphome"
+  ],
+  "documentation": "https://github.com/Aggro600/ESPHomeZ906",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Aggro600/ESPHomeZ906/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

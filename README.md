@@ -1,30 +1,52 @@
-# ESPHome Z906
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo-dunkel.png">
+    <img src="logo.png" alt="Z906 Bridge" width="420">
+  </picture>
+</p>
 
-Logitech Z906 in Home Assistant with **ESPHome** – an ESP32 sits between the original console and the amplifier
-(DE-15 cable) and **keeps the console fully working**.
+# Logitech Z906 for Home Assistant
 
-Volume, subwoofer, centre, rear, input and effect show up as normal ESPHome entities (no MQTT broker needed);
-everything you change on the console is reported back, everything you change in Home Assistant is shown on the
-console.
+An ESP32 sits between the console and the amplifier of a Logitech Z906 (DE-15 cable) and brings the speaker
+system into Home Assistant – **without** replacing the console. The console keeps working exactly as before;
+everything you change there is reported back, and everything you change in Home Assistant is shown on the console.
 
-Based on the idea and wiring of [Jupsi/logi_z906_wifi](https://github.com/Jupsi/logi_z906_wifi) (Arduino + MQTT),
-rewritten as an ESPHome external component. Protocol: [nomis/logitech-z906](https://github.com/nomis/logitech-z906).
+This repository has two parts:
 
-## What is different from the Arduino/MQTT version
+- **ESPHome firmware** for the ESP32 (`components/z906`, example [`z906.yaml`](z906.yaml)): volume, subwoofer,
+  centre and rear level, input, effect and power state as ESPHome entities. No MQTT broker needed.
+- **Home Assistant integration** (`custom_components/z906`, installable through HACS): combines these entities into
+  one **media player** with volume, source and sound mode, plus optional on/off through IR buttons.
 
-- **Console starts reliably after a power cut.** While console and amplifier boot, both serial lines carry about one
-  second of garbage. By chance it contains valid commands (speaker test `22`, headphones `10`, input selection …).
-  A plain cable would just carry noise – an ESP in between turned it into clean bytes, after which the console
-  ignored the power button / IR (only a 2–5 s window after power-on worked). An **interference filter** now passes
-  only protocol bytes and mutes a direction for 300 ms after any invalid byte.
-- **Forwarding always runs**, in its own FreeRTOS task, from the first second after boot – independent of WiFi,
-  the API or logging. No more gating via pin 8/15.
-- **No endless waits.** An incomplete `AA …` reply is dropped after 300 ms (the old code could hang until power was
-  cut). Checksums are verified.
-- **Commands from Home Assistant are only sent when the line is idle** and no reply is pending; state changes in
-  HA only after the amplifier echoed the command.
-- Fixes: `0x10` is *headphones connected*, not *power off* (power off = `0x36`); effect codes in the status reply
-  are decoded correctly.
+## Installation
+
+### 1. Build the bridge
+
+Wire the ESP32 (see [Wiring](#wiring)); it needs its own USB power supply. Copy [`z906.yaml`](z906.yaml) into your
+ESPHome folder, add `api_key_z906`, `ota_pw`, `wifi_ssid` and `wifi_password` to your `secrets.yaml` and install it.
+Flash once over USB, afterwards OTA. The component comes straight from this repository (`external_components`).
+Add the device in Home Assistant through the ESPHome integration.
+
+Keep the entity names `Power`, `Volume` and `Input` (and `Effect`) from the example; the integration finds them
+by these names.
+
+### 2. Install the integration
+
+Open HACS, search for **Logitech Z906** and download it, then restart Home Assistant. Without HACS, copy
+`custom_components/z906` into your configuration folder.
+
+Go to **Settings → Devices & services → Add integration → Logitech Z906** and choose the ESPHome device. Optionally
+choose entities that switch the amplifier on and off, such as IR buttons or scripts.
+
+## What the bridge takes care of
+
+- Passes everything through from the very first moment, in its own task, so the console starts regardless of when
+  the IR command or the power button comes.
+- **Start-up protection:** level steps during the wake-up sequence are held back, and the bridge sends nothing of
+  its own for 4 s after power-on.
+- Commands from Home Assistant are only sent when the line is idle and no reply is pending.
+- Input changes like the console does them: mute, switch input, restore the input's effect, unmute.
+- Interference filter for the garbage the amplifier sends while it boots.
 
 ## Entities
 
@@ -36,8 +58,8 @@ rewritten as an ESPHome external component. Protocol: [nomis/logitech-z906](http
 | Power | `binary_sensor`, from the power-on/off sequence; after an ESP restart: console traffic = on, 75 s silence = off |
 | Read status | `button`, reads levels/input/effects from the amplifier |
 
-**Power on/off from Home Assistant is not possible over the serial link** – only the console can switch the
-amplifier on (power button or IR). Use an IR sender for that.
+**Power on/off is not possible over the serial link** – only the console can switch the amplifier on (power
+button or IR). Choose IR buttons in the integration to get on/off in the media player.
 
 ## Wiring
 
@@ -59,14 +81,6 @@ Pins 1–11, 14, 15 go straight through (amplifier ↔ console); only the serial
 Pin 8/9/15 are optional ADC diagnostics. Observed: pin 8 ≈ 3.2 V console awake (standby), ≈ 1.6 V console asleep,
 ≈ 0.1 V running.
 
-## Installation
-
-1. Copy [`z906.yaml`](z906.yaml) into your ESPHome configuration (it pulls the component from this repository
-   via `external_components`) and add the secrets.
-2. Flash once over USB, afterwards OTA.
-3. Optional: [`homeassistant/z906_mediaplayer.yaml`](homeassistant/z906_mediaplayer.yaml) as a package makes the
-   Z906 a `media_player` (volume set/up/down, source; add your IR script for on/off).
-
 ## Troubleshooting
 
 ```yaml
@@ -81,3 +95,12 @@ The capture also covers the seconds after power-on, before WiFi/API are connecte
 ## License
 
 GPL-3.0, like the project this is based on.
+
+## Credits
+
+Idea and wiring: [Jupsi/logi_z906_wifi](https://github.com/Jupsi/logi_z906_wifi).
+Protocol reference: [nomis/logitech-z906](https://github.com/nomis/logitech-z906/blob/main/protocol.rst).
+
+> Known issue on one unit: switching to an input with the 3D effect made the amplifier reset – also with older
+> firmware of the bridge. If you see the same, please test once with the console plugged directly into the
+> amplifier (without the bridge) and report the result.

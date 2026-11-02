@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Logitech Z906",
+        "description": "Wähle das ESPHome-Gerät deiner Z906-Bridge. Über die serielle Leitung lässt sich der Verstärker nicht ein- oder ausschalten; dafür kannst du optional Entitäten wie IR-Tasten wählen.",
+        "data": {
+          "device_id": "ESPHome-Gerät",
+          "power_on_entity": "Entität zum Einschalten",
+          "power_off_entity": "Entität zum Ausschalten"
+        }
+      }
+    },
+    "error": {
+      "not_z906": "Dieses Gerät hat keine Z906-Entitäten mit den Namen Power, Volume und Input."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Logitech Z906",
+        "data": {
+          "power_on_entity": "Entität zum Einschalten",
+          "power_off_entity": "Entität zum Ausschalten"
+        }
+      }
+    }
+  }
+}
