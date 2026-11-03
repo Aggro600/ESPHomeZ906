@@ -78,7 +78,7 @@ Pins 1–11, 14, 15 go straight through (amplifier ↔ console); only the serial
 | 13 | – | GPIO23 (TX to amplifier) |
 | 15 | 15 | GPIO35 (diagnostics only) |
 
-Pin 8/9/15 are optional ADC diagnostics. Observed: pin 8 ≈ 3.2 V console awake (standby), ≈ 1.6 V console asleep,
+Pin 8/9/15 are optional ADC diagnostics (leave them out in normal use, see Troubleshooting). Observed: pin 8 ≈ 3.2 V console awake (standby), ≈ 1.6 V console asleep,
 ≈ 0.1 V running.
 
 ## Troubleshooting
@@ -91,6 +91,9 @@ z906:
 ```
 
 The capture also covers the seconds after power-on, before WiFi/API are connected.
+
+Switch `debug_traffic` off again afterwards. With it (and the optional pin 8/9/15 ADC sensors) running, the amplifier
+restarted when the volume was turned up quickly; without them it stays on.
 
 ## License
 

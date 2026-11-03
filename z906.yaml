@@ -20,9 +20,9 @@ esp32:
     type: esp-idf
 
 external_components:
-  - source: github://Aggro600/ESPHomeZ906
+  # Pinned to a release tag: builds stay reproducible, a new version only arrives when you change the tag here
+  - source: github://Aggro600/ESPHomeZ906@v1.0.1
     components: [z906]
-    refresh: 0s
 
 logger:
   level: INFO

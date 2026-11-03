@@ -142,6 +142,7 @@ class Z906 : public Component {
   uint32_t weitergeleitet_k_{0}, weitergeleitet_v_{0}, verworfen_{0};
   uint32_t letzte_abfrage_{0}, letzter_bericht_{0};
   // Traffic capture (debug_traffic): bytes per direction, written as one line after 30 ms of silence
+  uint32_t flut_t0_{0}, flut_n_{0}, flut_ueber_{0};   // capture limit during a data flood
   bool mitschnitt_{false};
   char zeile_[2][200];
   int zeile_n_[2]{0, 0};

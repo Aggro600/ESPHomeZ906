@@ -103,6 +103,16 @@ void Z906::task_schleife_() {
 // ---------------------------------------------------------------- Capture
 
 void Z906::mitschnitt_byte_(int r, uint8_t b) {
+  // Data flood (2026-11-03: the amp restarted and sent zero bytes for seconds - logging every byte stalled the
+  // forwarding until the task watchdog fired): capture at most 400 bytes per second, the rest is only counted
+  const uint32_t jetzt = millis();
+  if (jetzt - flut_t0_ >= 1000) {
+    if (flut_ueber_) ESP_LOGW(TAG, "Capture: %u bytes in 1 s not logged (data flood)", (unsigned) flut_ueber_);
+    flut_t0_ = jetzt;
+    flut_n_ = 0;
+    flut_ueber_ = 0;
+  }
+  if (++flut_n_ > 400) { flut_ueber_++; return; }
   if (zeile_n_[r] > (int) sizeof(zeile_[r]) - 8) mitschnitt_flush_(r, true);
   zeile_n_[r] += snprintf(zeile_[r] + zeile_n_[r], sizeof(zeile_[r]) - zeile_n_[r], " %02X", b);
   zeile_t_[r] = millis();
