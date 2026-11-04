@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="logo-dunkel.png">
-    <img src="logo.png" alt="Z906 Bridge" width="420">
+    <img src="https://raw.githubusercontent.com/Aggro600/ESPHomeZ906/main/logo.png" alt="Z906 Bridge" width="420">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@ everything you change there is reported back, and everything you change in Home 
 
 This repository has two parts:
 
-- **ESPHome firmware** for the ESP32 (`components/z906`, example [`z906.yaml`](z906.yaml)): volume, subwoofer,
+- **ESPHome firmware** for the ESP32 (`components/z906`, example [`z906.yaml`](https://github.com/Aggro600/ESPHomeZ906/blob/main/z906.yaml)): volume, subwoofer,
   centre and rear level, input, effect and power state as ESPHome entities. No MQTT broker needed.
 - **Home Assistant integration** (`custom_components/z906`, installable through HACS): combines these entities into
   one **media player** with volume, source and sound mode, plus optional on/off through IR buttons.
@@ -22,7 +22,7 @@ This repository has two parts:
 
 ### 1. Build the bridge
 
-Wire the ESP32 (see [Wiring](#wiring)); it needs its own USB power supply. Copy [`z906.yaml`](z906.yaml) into your
+Wire the ESP32 (see [Wiring](#wiring)); it needs its own USB power supply. Copy [`z906.yaml`](https://github.com/Aggro600/ESPHomeZ906/blob/main/z906.yaml) into your
 ESPHome folder, add `api_key_z906`, `ota_pw`, `wifi_ssid` and `wifi_password` to your `secrets.yaml` and install it.
 Flash once over USB, afterwards OTA. The component comes straight from this repository (`external_components`).
 Add the device in Home Assistant through the ESPHome integration.
