@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Aggro600/ESPHomeZ906/main/logo-dunkel.png">
-    <img src="https://raw.githubusercontent.com/Aggro600/ESPHomeZ906/main/logo.png" alt="Z906 Bridge" width="420">
-  </picture>
+  <img src="https://raw.githubusercontent.com/Aggro600/ESPHomeZ906/main/logo-karte.png" alt="Z906 Bridge" width="440">
 </p>
 
 # Logitech Z906 for Home Assistant
