@@ -54,9 +54,9 @@ class Z906MediaPlayer(MediaPlayerEntity):
         )
         if "effect" in entities:
             features |= MediaPlayerEntityFeature.SELECT_SOUND_MODE
-        if self._power_on:
+        if self._power_on or "power_switch" in entities:
             features |= MediaPlayerEntityFeature.TURN_ON
-        if self._power_off:
+        if self._power_off or "power_switch" in entities:
             features |= MediaPlayerEntityFeature.TURN_OFF
         self._attr_supported_features = features
 
@@ -127,13 +127,29 @@ class Z906MediaPlayer(MediaPlayerEntity):
             "select", "select_option", {"entity_id": self._entities[role], "option": option}, blocking=True
         )
 
+    def _without_console(self) -> bool:
+        """Mode without console: the bridge itself switches the amplifier (power switch)."""
+        mode = self._usable("without_console")
+        return mode is not None and mode.state == STATE_ON and "power_switch" in self._entities
+
     async def async_turn_on(self) -> None:
-        """Run the configured power-on entity."""
-        await self._run(self._power_on)
+        """Power switch of the bridge (mode without console), otherwise the configured power-on entity."""
+        if self._without_console():
+            await self._switch("turn_on")
+        else:
+            await self._run(self._power_on)
 
     async def async_turn_off(self) -> None:
-        """Run the configured power-off entity."""
-        await self._run(self._power_off)
+        """Power switch of the bridge (mode without console), otherwise the configured power-off entity."""
+        if self._without_console():
+            await self._switch("turn_off")
+        else:
+            await self._run(self._power_off)
+
+    async def _switch(self, service: str) -> None:
+        await self.hass.services.async_call(
+            "switch", service, {"entity_id": self._entities["power_switch"]}, blocking=True
+        )
 
     async def _run(self, entity_id: str | None) -> None:
         if not entity_id:

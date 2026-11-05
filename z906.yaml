@@ -5,7 +5,9 @@
 # Wiring (like github.com/Jupsi/logi_z906_wifi):
 #   console pin 12   -> GPIO17 (TX to the console)      console pin 13   -> GPIO16 (RX from the console)
 #   amplifier pin 12 -> GPIO22 (RX from the amplifier)  amplifier pin 13 -> GPIO23 (TX to the amplifier)
-#   GND -> GND. Optional, display only: pin 8 -> GPIO32, pin 9 -> GPIO34, pin 15 -> GPIO35.
+#   GND -> GND. Optional, display only: pin 8 -> GPIO32, pin 9 -> GPIO34.
+#   Pin 15 straight through (amplifier <-> console) - or, for the mode without console, split through the ESP:
+#   amplifier pin 15 -> GPIO25, console pin 15 -> GPIO26, pin 7 not connected (see README).
 # The ESP32 needs its own power supply (USB), separate from the amplifier.
 #
 # Put this file into your ESPHome folder (e.g. as logi-z906.yaml) and the folder components/z906 next to it –
@@ -21,7 +23,7 @@ esp32:
 
 external_components:
   # Pinned to a release tag: builds stay reproducible, a new version only arrives when you change the tag here
-  - source: github://Aggro600/ESPHomeZ906@v1.0.2
+  - source: github://Aggro600/ESPHomeZ906@v1.1.0
     components: [z906]
 
 logger:
@@ -69,6 +71,13 @@ z906:
   # Troubleshooting: button that prints the capture of the first 3 minutes after start-up
   dump_capture:
     name: "Dump capture"
+  # Optional: mode without console - only with pin 15 split through the ESP (see README), otherwise leave out
+  # amp_enable_pin: 25
+  # console_enable_pin: 26
+  # without_console:
+  #   name: "Without console"
+  # power_switch:
+  #   name: "Power switch"
 
 sensor:
   - platform: wifi_signal

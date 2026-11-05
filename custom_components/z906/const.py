@@ -12,5 +12,8 @@ ROLES = {
     "volume": ("number", "volume"),
     "input": ("select", "input"),
     "effect": ("select", "effect"),
+    # Mode without console (firmware 1.1.0): the bridge switches the amplifier itself
+    "power_switch": ("switch", "power switch"),
+    "without_console": ("switch", "without console"),
 }
 REQUIRED_ROLES = ("power", "volume", "input")

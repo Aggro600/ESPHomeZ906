@@ -5,10 +5,10 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
-from esphome.components import binary_sensor, button, number, select
+from esphome.components import binary_sensor, button, number, select, switch
 from esphome.const import CONF_ID
 
-AUTO_LOAD = ["binary_sensor", "button", "number", "select"]
+AUTO_LOAD = ["binary_sensor", "button", "number", "select", "switch"]
 
 z906_ns = cg.esphome_ns.namespace("z906")
 Z906 = z906_ns.class_("Z906", cg.Component)
@@ -17,6 +17,8 @@ Z906Input = z906_ns.class_("Z906Input", select.Select)
 Z906Effect = z906_ns.class_("Z906Effect", select.Select)
 Z906StatusButton = z906_ns.class_("Z906StatusButton", button.Button)
 Z906MitschnittButton = z906_ns.class_("Z906MitschnittButton", button.Button)
+Z906ModeSwitch = z906_ns.class_("Z906ModeSwitch", switch.Switch)
+Z906PowerSwitch = z906_ns.class_("Z906PowerSwitch", switch.Switch)
 
 CONF_CONSOLE_RX = "console_rx_pin"
 CONF_CONSOLE_TX = "console_tx_pin"
@@ -32,6 +34,10 @@ CONF_POWER = "power"
 CONF_READ_STATUS = "read_status"
 CONF_DEBUG_TRAFFIC = "debug_traffic"
 CONF_DUMP_CAPTURE = "dump_capture"
+CONF_AMP_ENABLE = "amp_enable_pin"
+CONF_CONSOLE_ENABLE = "console_enable_pin"
+CONF_WITHOUT_CONSOLE = "without_console"
+CONF_POWER_SWITCH = "power_switch"
 
 # Order = index in the C++ code
 # Like the old MQTT project (logi_z906_wifi) - automations/dashboards use these option names
@@ -40,7 +46,20 @@ EFFEKTE = ["3D", "2.1", "4.1", "None"]
 PEGEL = [(CONF_VOLUME, 0, "mdi:volume-high"), (CONF_SUBWOOFER, 1, "mdi:speaker"),
          (CONF_CENTER, 2, "mdi:speaker"), (CONF_REAR, 3, "mdi:surround-sound")]
 
-CONFIG_SCHEMA = cv.Schema(
+
+
+def _ohne_konsole(config):
+    """Mode without console: pin 15 (console presence) must be split through the ESP, see README."""
+    if (CONF_AMP_ENABLE in config) != (CONF_CONSOLE_ENABLE in config):
+        raise cv.Invalid("amp_enable_pin and console_enable_pin belong together (pin 15 split through the ESP)")
+    if (CONF_WITHOUT_CONSOLE in config or CONF_POWER_SWITCH in config) and CONF_AMP_ENABLE not in config:
+        raise cv.Invalid("without_console and power_switch need amp_enable_pin and console_enable_pin")
+    if CONF_CONSOLE_ENABLE in config and 34 <= config[CONF_CONSOLE_ENABLE] <= 39:
+        raise cv.Invalid("console_enable_pin needs the internal pull-up - GPIO34..39 have none, use e.g. GPIO26")
+    return config
+
+
+CONFIG_SCHEMA = cv.All(cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Z906),
         cv.Required(CONF_CONSOLE_RX): pins.internal_gpio_input_pin_number,
@@ -57,8 +76,18 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_DEBUG_TRAFFIC, default=False): cv.boolean,
         # Button: write the capture (last 300 lines of traffic) to the log
         cv.Optional(CONF_DUMP_CAPTURE): button.button_schema(Z906MitschnittButton, icon="mdi:text-box-search"),
+        # Pin 15 (console presence) split through the ESP: amplifier side -> output (open drain), console side ->
+        # input with pull-up. Without these two the bridge works as before (pin 15 wired straight through).
+        cv.Optional(CONF_AMP_ENABLE): pins.internal_gpio_output_pin_number,
+        cv.Optional(CONF_CONSOLE_ENABLE): pins.internal_gpio_input_pin_number,
+        # Switch: the ESP runs the amplifier alone, the console stays off (and dark)
+        cv.Optional(CONF_WITHOUT_CONSOLE): switch.switch_schema(
+            Z906ModeSwitch, icon="mdi:remote-off", default_restore_mode="RESTORE_DEFAULT_OFF"
+        ),
+        # Switch: amplifier on/off (only in the mode without console)
+        cv.Optional(CONF_POWER_SWITCH): switch.switch_schema(Z906PowerSwitch, icon="mdi:power"),
     }
-).extend(cv.COMPONENT_SCHEMA)
+).extend(cv.COMPONENT_SCHEMA), _ohne_konsole)
 
 
 async def to_code(config):
@@ -88,3 +117,13 @@ async def to_code(config):
     if CONF_DUMP_CAPTURE in config:
         b = await button.new_button(config[CONF_DUMP_CAPTURE])
         cg.add(b.set_parent(var))
+    if CONF_AMP_ENABLE in config:
+        cg.add(var.set_enable_pins(config[CONF_AMP_ENABLE], config[CONF_CONSOLE_ENABLE]))
+    if CONF_WITHOUT_CONSOLE in config:
+        s = await switch.new_switch(config[CONF_WITHOUT_CONSOLE])
+        cg.add(s.set_parent(var))
+        cg.add(var.set_modus_switch(s))
+    if CONF_POWER_SWITCH in config:
+        s = await switch.new_switch(config[CONF_POWER_SWITCH])
+        cg.add(s.set_parent(var))
+        cg.add(var.set_power_switch(s))

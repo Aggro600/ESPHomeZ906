@@ -6,6 +6,7 @@
 #include "esphome/components/button/button.h"
 #include "esphome/components/number/number.h"
 #include "esphome/components/select/select.h"
+#include "esphome/components/switch/switch.h"
 #include <atomic>
 #include <deque>
 #include <string>
@@ -60,6 +61,23 @@ class Z906MitschnittButton : public button::Button {
   Z906 *parent_{nullptr};
 };
 
+// Mode without console (2026-11-05): the ESP holds pin 15 of the amplifier itself, the console stays off
+class Z906ModeSwitch : public switch_::Switch {
+ public:
+  void set_parent(Z906 *p) { parent_ = p; }
+ protected:
+  void write_state(bool state) override;
+  Z906 *parent_{nullptr};
+};
+
+class Z906PowerSwitch : public switch_::Switch {
+ public:
+  void set_parent(Z906 *p) { parent_ = p; }
+ protected:
+  void write_state(bool state) override;
+  Z906 *parent_{nullptr};
+};
+
 class Z906 : public Component {
  public:
   // Capture of the first minutes after start (bytes + notes like pin voltages), output via button
@@ -71,6 +89,11 @@ class Z906 : public Component {
   void set_effekt_select(Z906Effect *s) { effekt_s_ = s; }
   void set_power_sensor(binary_sensor::BinarySensor *b) { power_b_ = b; }
   void set_mitschnitt(bool m) { mitschnitt_ = m; }
+  void set_enable_pins(int amp, int konsole) { amp_en_ = amp; kon_en_ = konsole; }
+  void set_modus_switch(Z906ModeSwitch *s) { modus_s_ = s; }
+  void set_power_switch(Z906PowerSwitch *s) { power_s_ = s; }
+  void modus_setzen(bool ohne_konsole);
+  void power_setzen(bool an);
 
   // Calls from Home Assistant (main loop) -> queue -> bridge task
   void pegel_setzen(uint8_t kanal, int ziel);
@@ -157,6 +180,34 @@ class Z906 : public Component {
   Z906Input *eingang_s_{nullptr};
   Z906Effect *effekt_s_{nullptr};
   binary_sensor::BinarySensor *power_b_{nullptr};
+
+  // Mode without console (2026-11-05). Pin 15 = console presence: the amplifier only powers the speakers while it
+  // is held at 0 V (github.com/nomis/logitech-z906/interface.rst). Split through the ESP: amplifier side ->
+  // amp_en_ (open drain, the amp has its own pull-up), console side -> kon_en_ (input, internal pull-up).
+  //  - mode console: amp_en_ follows kon_en_ - same as the straight wire before
+  //  - mode without console: the ESP holds amp_en_ itself (power switch), drops everything from the console and
+  //    sends nothing to it - the console stays in standby and dark
+  // Changing the mode: console -> without only once the console is off; without -> console switches the amp off first.
+  int amp_en_{-1}, kon_en_{-1};
+  std::atomic<bool> ohne_{false};          // active mode (task + loop)
+  std::atomic<int8_t> modus_ziel_{-1};     // requested mode from HA: 0 console, 1 without
+  std::atomic<int8_t> power_wunsch_{-1};   // power switch: 1 on, 0 off, -1 nothing
+  // Task only
+  bool amp_halten_{false};    // without console: pin 15 of the amplifier at 0 V
+  int8_t pin15_tief_{-1};
+  int8_t kon15_alt_{-1};
+  uint32_t kon_seit_{0};      // time of the last change of the console's pin 15
+  uint8_t an_phase_{0};       // 1 amp starting, 2 status read, 3 power-on sent, 10 power-off sent
+  uint32_t an_t_{0};
+  bool modus_hinweis_{false};
+  std::atomic<bool> status_da_{false};   // a valid status reply (AA 0A) arrived
+  void konsolenlos_(uint32_t jetzt);
+  void pin15_setzen_(bool tief);
+  void an_konsole_(uint8_t b);
+  // Loop only
+  int8_t gemeldet_modus_{-2}, gemeldet_schalter_{-2};
+  Z906ModeSwitch *modus_s_{nullptr};
+  Z906PowerSwitch *power_s_{nullptr};
 };
 
 }  // namespace esphome::z906

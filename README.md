@@ -8,12 +8,17 @@ An ESP32 sits between the console and the amplifier of a Logitech Z906 (DE-15 ca
 system into Home Assistant – **without** replacing the console. The console keeps working exactly as before;
 everything you change there is reported back, and everything you change in Home Assistant is shown on the console.
 
+> [!CAUTION]
+> **Updating to 1.1.0 / rewiring for the mode without console:** read [WIRING.md](https://github.com/Aggro600/ESPHomeZ906/blob/main/WIRING.md)
+> first. **Pull the subwoofer's mains plug and the ESP's USB cable before touching any wire**, and install the
+> firmware **before** you rewire. The update alone changes nothing – the new mode is optional.
+
 This repository has two parts:
 
 - **ESPHome firmware** for the ESP32 (`components/z906`, example [`z906.yaml`](https://github.com/Aggro600/ESPHomeZ906/blob/main/z906.yaml)): volume, subwoofer,
   centre and rear level, input, effect and power state as ESPHome entities. No MQTT broker needed.
 - **Home Assistant integration** (`custom_components/z906`, installable through HACS): combines these entities into
-  one **media player** with volume, source and sound mode, plus optional on/off through IR buttons.
+  one **media player** with volume, source and sound mode, plus on/off through IR buttons or the bridge itself.
 
 ## Installation
 
@@ -54,18 +59,49 @@ choose entities that switch the amplifier on and off, such as IR buttons or scri
 | Effect | `select`, 3D / 2.1 / 4.1 / None – only for inputs 1, 2, 6 (digital inputs follow the signal) |
 | Power | `binary_sensor`, from the power-on/off sequence; after an ESP restart: console traffic = on, 75 s silence = off |
 | Read status | `button`, reads levels/input/effects from the amplifier |
+| Without console | `switch`, optional – the ESP runs the amplifier alone, the console stays off and dark (see below) |
+| Power switch | `switch`, optional – on/off from Home Assistant, only in the mode without console |
 
 **Power on/off is not possible over the serial link** – only the console can switch the amplifier on (power
-button or IR). Choose IR buttons in the integration to get on/off in the media player.
+button or IR). Choose IR buttons in the integration to get on/off in the media player – or use the
+[mode without console](#mode-without-console).
+
+## Mode without console
+
+The amplifier only powers its speakers while pin 15 ("console presence") is held at 0 V – normally by the console,
+which then also lights its LEDs. If pin 15 is split through the ESP and pin 7 is disconnected – step by step and with
+all warnings in [WIRING.md](https://github.com/Aggro600/ESPHomeZ906/blob/main/WIRING.md) – the bridge can do this itself:
+
+- **Without console off** (default): the ESP passes pin 15 from the console to the amplifier – everything works as
+  before, the console switches on and off.
+- **Without console on**: the ESP holds pin 15 itself and talks to the amplifier alone. The console stays in
+  standby and dark; the console and its remote do nothing in this mode. **Power switch** switches the amplifier on
+  and off (the media player of the integration uses it automatically).
+
+The mode changes once the system is off (switching to "without console" while the console is on waits until you
+switch the console off; switching back turns the amplifier off first). There is no automatic standby in this mode
+– switch off from Home Assistant (e.g. an automation).
+
+**Pin 7 must be disconnected** (no wire between the two pin-7 terminals). With it connected, the switched-off
+console makes the amplifier restart every ~20 s without ever answering. The console works fine without pin 7.
+
+Switching on works like the console and like zarpli/BreadJS: pin 15 to 0 V, ask for the status until the amplifier
+answers (about 1 s), then power on, input, effect and mute off (`30 11 11 <input> <effect> 39` – without the final
+`39` the amplifier runs but stays silent).
+
+Order: install the firmware first (it starts in console mode and also works with pin 15 still wired straight
+through), then move the two wires, then turn on "Without console". Note: with pin 15 through the ESP the amplifier
+depends on the ESP – while it restarts (e.g. an update) the sound is off for a few seconds.
 
 ## Wiring
 
 ESP32 (e.g. ESP32-DevKit / WROOM – on WROVER boards GPIO16/17 are used by PSRAM, pick other pins).
 Pins 1–11, 14, 15 go straight through (amplifier ↔ console); only the serial lines 12/13 are split through the ESP.
+For the [mode without console](#mode-without-console) pin 15 is split as well (last two rows instead of the GPIO35 row).
 
 | Amplifier | Console | ESP32 |
 |-----------|---------|--------|
-| 1–7, 10, 11, 14 | same pin | – |
+| 1–7, 10, 11, 14 | same pin | – (mode without console: pin 7 not connected) |
 | 6 + GND | 6 | GND |
 | 8 | 8 | GPIO32 (diagnostics only) |
 | 9 | 9 | GPIO34 (diagnostics only) |
@@ -73,7 +109,9 @@ Pins 1–11, 14, 15 go straight through (amplifier ↔ console); only the serial
 | – | 13 | GPIO16 (RX from console) |
 | 12 | – | GPIO22 (RX from amplifier) |
 | 13 | – | GPIO23 (TX to amplifier) |
-| 15 | 15 | GPIO35 (diagnostics only) |
+| 15 | 15 | GPIO35 (diagnostics only) – or, split for the mode without console: |
+| 15 | – | GPIO25 (`amp_enable_pin`, open drain) |
+| – | 15 | GPIO26 (`console_enable_pin`, needs the internal pull-up – not GPIO34…39) |
 
 Pin 8/9/15 are optional ADC diagnostics (leave them out in normal use, see Troubleshooting). Observed: pin 8 ≈ 3.2 V console awake (standby), ≈ 1.6 V console asleep,
 ≈ 0.1 V running.

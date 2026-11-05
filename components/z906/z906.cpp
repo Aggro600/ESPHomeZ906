@@ -2,6 +2,7 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 #include <driver/uart.h>
+#include <driver/gpio.h>
 #include <cmath>
 #include <cstring>
 
@@ -42,6 +43,23 @@ void Z906::setup() {
     this->mark_failed();
     return;
   }
+  if (amp_en_ >= 0 && kon_en_ >= 0) {
+    // Amplifier side of pin 15: open drain, released (= high via the amp's pull-up = amp off) until decided
+    gpio_reset_pin((gpio_num_t) amp_en_);
+    gpio_set_level((gpio_num_t) amp_en_, 1);
+    gpio_set_direction((gpio_num_t) amp_en_, GPIO_MODE_INPUT_OUTPUT_OD);
+    gpio_reset_pin((gpio_num_t) kon_en_);
+    gpio_set_direction((gpio_num_t) kon_en_, GPIO_MODE_INPUT);
+    gpio_set_pull_mode((gpio_num_t) kon_en_, GPIO_PULLUP_ONLY);
+    bool ohne = false;
+    if (modus_s_ != nullptr) {
+      auto r = modus_s_->get_initial_state_with_restore_mode();
+      ohne = r.has_value() && *r;
+    }
+    ohne_ = ohne;
+    modus_ziel_ = ohne ? 1 : 0;
+    if (ohne) power_ = 0;   // pin 15 was released during the restart: the amplifier is off
+  }
   // Own task, higher priority than the ESPHome loop: the forwarding must never wait for WiFi, the API or
   // logging (the old project hung there - console only started within a short time window).
   xTaskCreatePinnedToCore(Z906::task_, "z906", 4096, this, 5, nullptr, 1);
@@ -75,6 +93,7 @@ void Z906::task_schleife_() {
       eigene_antwort_offen_ = false;
     }
     weckfenster_pruefen_(jetzt);
+    if (amp_en_ >= 0) konsolenlos_(jetzt);
     // Commands from Home Assistant: only when the line is idle, no reply is pending and the console is not waking up
     Befehl c;
     // Nach dem Einschalten (11) 4 s nichts Eigenes: die Konsole fragt dann selbst den Status ab - unser 34 genau
@@ -161,6 +180,7 @@ bool Z906::gueltig_(int r, uint8_t b) const {
 }
 
 void Z906::von_konsole_(uint8_t b) {
+  if (ohne_.load(std::memory_order_relaxed)) return;   // mode without console: the console is not part of it
   const uint32_t jetzt = millis();
   if (k_pos_ >= 0) {   // inside an AA message from the console: pass through unchanged
     k_pos_++;          // position of this byte (AA = 0, type = 1, length = 2, ..., checksum = 3 + length)
@@ -219,6 +239,152 @@ void Z906::weckfenster_pruefen_(uint32_t jetzt) {
   if (mitschnitt_) verlauf_merken_(an ? "Startschutz: Konsole an" : "Startschutz: abgelaufen ohne Einschalten");
 }
 
+// ---------------------------------------------------------------- Mode without console (see header)
+
+void Z906::an_konsole_(uint8_t b) {
+  if (!ohne_.load(std::memory_order_relaxed)) uart_write_bytes(UART_K, (const char *) &b, 1);
+}
+
+void Z906::pin15_setzen_(bool tief) {
+  if ((int8_t) tief == pin15_tief_) return;
+  pin15_tief_ = (int8_t) tief;
+  gpio_set_level((gpio_num_t) amp_en_, tief ? 0 : 1);
+  if (mitschnitt_) verlauf_merken_(tief ? "Verstaerker Pin 15: 0 V (an)" : "Verstaerker Pin 15: frei (aus)");
+}
+
+void Z906::konsolenlos_(uint32_t jetzt) {
+  const int kon = gpio_get_level((gpio_num_t) kon_en_);   // 0 = console active
+  const int8_t ziel = modus_ziel_.load();
+  // Mode change
+  if (ziel >= 0 && (ziel == 1) != ohne_.load()) {
+    if (ziel == 1) {
+      if (power_.load() != 1 && kon == 1) {   // console off: take over
+        ohne_ = true;
+        amp_halten_ = false;
+        an_phase_ = 0;
+        power_ = 0;
+        modus_hinweis_ = false;
+        ESP_LOGI(TAG, "Mode: without console - the console stays off, switch on/off from Home Assistant");
+      } else if (!modus_hinweis_) {
+        modus_hinweis_ = true;
+        ESP_LOGI(TAG, "Mode 'without console' starts as soon as the console is switched off");
+      }
+    } else if (!amp_halten_ && an_phase_ == 0) {
+      ohne_ = false;
+      modus_hinweis_ = false;
+      ESP_LOGI(TAG, "Mode: console");
+    } else if (an_phase_ < 10) {
+      power_wunsch_ = 0;   // switch the amplifier off first
+    }
+  }
+  if (!ohne_.load()) {
+    // Mode console: amplifier pin 15 follows the console - like the straight wire
+    pin15_setzen_(kon == 0);
+    if (kon != kon15_alt_) {
+      kon15_alt_ = (int8_t) kon;
+      kon_seit_ = jetzt;
+      if (mitschnitt_) verlauf_merken_(kon ? "Konsole Pin 15: frei" : "Konsole Pin 15: 0 V");
+    }
+    // Console released pin 15 for 0.5 s: the amplifier is off - even if its 36 was missed (2026-11-05: console
+    // switched off, the bridge kept "on" and the change to the mode without console waited forever)
+    if (kon == 1 && power_.load() == 1 && jetzt - kon_seit_ >= 500) {
+      power_ = 0;
+      ESP_LOGI(TAG, "Console released pin 15 - amplifier off");
+    }
+    return;
+  }
+  if (kon != kon15_alt_) {
+    kon15_alt_ = (int8_t) kon;
+    if (kon == 0) ESP_LOGW(TAG, "Console switched on (remote/button) - ignored in mode 'without console'");
+  }
+  const int8_t w = power_wunsch_.exchange(-1);
+  if (w == 1 && !amp_halten_) {
+    status_da_ = false;
+    amp_halten_ = true;   // the amplifier starts (power supply on), then like the console: status, power on
+    an_phase_ = 1;
+    an_t_ = jetzt;
+    ESP_LOGI(TAG, "Switching on");
+  } else if (w == 0 && amp_halten_ && an_phase_ < 10) {
+    xQueueReset(befehle_);
+    const uint8_t b[3] = {RESET_IDLE, 0x37, 0x36};   // like the console: speakers off + save settings
+    senden_(b, 3);
+    an_phase_ = 10;
+    an_t_ = jetzt;
+    ESP_LOGI(TAG, "Switching off");
+  }
+  pin15_setzen_(amp_halten_);
+  switch (an_phase_) {
+    case 1:   // amplifier boots: ask for the status every 0.7 s until it answers (max. 10 s)
+      if (status_da_) {
+        ESP_LOGI(TAG, "Amplifier answers after %u ms", (unsigned) (jetzt - an_t_));
+        an_phase_ = 2;
+        an_t_ = jetzt;
+      } else if (jetzt - an_t_ >= 10000) {
+        ESP_LOGW(TAG, "Amplifier does not answer - pin 15 released again");
+        amp_halten_ = false;
+        pin15_setzen_(false);
+        an_phase_ = 0;
+        power_ = 0;
+        gemeldet_schalter_ = -2;
+      } else if (jetzt - an_t_ >= 1000 && jetzt - letzte_abfrage_ >= 700 && uxQueueMessagesWaiting(befehle_) == 0) {
+        status_lesen();
+      }
+      break;
+    case 2:   // status read: input and its effect are known
+      if ((!eigene_antwort_offen_ && uxQueueMessagesWaiting(befehle_) == 0 && jetzt - an_t_ >= 100) ||
+          jetzt - an_t_ >= 2000) {
+        const int i = eingang_.load();
+        const int e = i >= 0 ? effekt_[i].load() : -1;
+        // Like the console (11 11, effect, ... 39) and zarpli/BreadJS (PWM_ON, input, MUTE_OFF): without the
+        // final 39 the amplifier runs but stays silent (2026-11-05)
+        uint8_t b[6];
+        size_t n = 0;
+        b[n++] = RESET_IDLE;
+        b[n++] = 0x11;
+        b[n++] = 0x11;
+        if (i >= 0) b[n++] = EINGANG_CODE[i];
+        b[n++] = effekt_moeglich(i) ? EFFEKT_CODE[e >= 0 ? e : 0] : EFFEKT_CODE[3];
+        b[n++] = 0x39;   // mute off
+        senden_(b, n);
+        an_phase_ = 3;
+        an_t_ = jetzt;
+      }
+      break;
+    case 3:
+      if (jetzt - an_t_ >= 1500) {
+        if (power_.load() != 1)
+          ESP_LOGW(TAG, "The amplifier did not confirm power-on - is pin 15 of the amplifier on GPIO%d?", amp_en_);
+        an_phase_ = 0;
+      }
+      break;
+    case 10:  // after the amp confirmed (36), release pin 15
+      if (jetzt - an_t_ >= 1500) {
+        amp_halten_ = false;
+        pin15_setzen_(false);
+        an_phase_ = 0;
+        power_ = 0;
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void Z906::modus_setzen(bool ohne_konsole) {
+  if (amp_en_ < 0) return;
+  modus_ziel_ = ohne_konsole ? 1 : 0;
+  gemeldet_modus_ = -2;
+}
+
+void Z906::power_setzen(bool an) {
+  if (modus_ziel_.load() != 1 || !ohne_.load()) {
+    ESP_LOGW(TAG, "The power switch only works in mode 'without console' - otherwise use the console or its remote");
+    gemeldet_schalter_ = -2;   // show the real state again
+    return;
+  }
+  power_wunsch_ = an ? 1 : 0;
+}
+
 // ---------------------------------------------------------------- Reading along
 
 void Z906::vom_verstaerker_(uint8_t b) {
@@ -227,6 +393,7 @@ void Z906::vom_verstaerker_(uint8_t b) {
     if (!gueltig_(1, b)) stoer_bis_[1] = jetzt + 300;
     if ((int32_t) (jetzt - stoer_bis_[1]) < 0) {   // interference (amp booting): drop
       gefiltert_[1]++;
+      if (mitschnitt_) mitschnitt_byte_(1, b);   // capture: show what was dropped (flood limit in mitschnitt_byte_)
       return;
     }
     if (b == 0xAA) {   // start of a multi-byte message
@@ -234,11 +401,11 @@ void Z906::vom_verstaerker_(uint8_t b) {
       mb_[mb_pos_++] = b;
       mb_t0_ = millis();
       mb_eigene_ = eigene_antwort_offen_;   // reply to our own status request: not to the console
-      if (!mb_eigene_) uart_write_bytes(UART_K, (const char *) &b, 1);
+      if (!mb_eigene_) an_konsole_(b);
       if (mitschnitt_) mitschnitt_byte_(1, b);
       return;
     }
-    uart_write_bytes(UART_K, (const char *) &b, 1);
+    an_konsole_(b);
     weitergeleitet_v_++;
     if (mitschnitt_) mitschnitt_byte_(1, b);
     einzelbyte_(b);
@@ -246,7 +413,7 @@ void Z906::vom_verstaerker_(uint8_t b) {
   }
   if (mitschnitt_) mitschnitt_byte_(1, b);
   if (!mb_eigene_) {
-    uart_write_bytes(UART_K, (const char *) &b, 1);
+    an_konsole_(b);
     weitergeleitet_v_++;
   } else {
     verworfen_++;
@@ -297,6 +464,7 @@ void Z906::antwort_fertig_() {
     return;
   }
   if (mb_[1] != 0x0A || laenge < 12) return;   // only status/configuration
+  status_da_ = true;
   const uint8_t *d = mb_ + 3;
   if (d[0] <= 43) pegel_[0] = (int8_t) d[0];   // main
   if (d[1] <= 43) pegel_[3] = (int8_t) d[1];   // rear
@@ -406,8 +574,19 @@ void Z906::loop() {
     gemeldet_power_ = p;
     power_b_->publish_state(p == 1);
   }
+  if (modus_s_ != nullptr) {
+    const int8_t m = modus_ziel_.load();
+    if (m >= 0 && m != gemeldet_modus_) {
+      gemeldet_modus_ = m;
+      modus_s_->publish_state(m == 1);
+    }
+  }
+  if (power_s_ != nullptr && p >= 0 && p != gemeldet_schalter_) {
+    gemeldet_schalter_ = p;
+    power_s_->publish_state(p == 1);
+  }
   // No console traffic for 75 s after the start: standby
-  if (p < 0 && millis() > 75000) power_ = 0;
+  if (p < 0 && millis() > 75000) power_ = 0;   // (mode without console: set at start)
   // Amp on, but levels still unknown (ESP restarted while it was running): read the status itself
   if (p == 1 && pegel_[0].load() < 0 && millis() - letzte_abfrage_ > 30000) status_lesen();
   if (millis() - letzter_bericht_ > 60000) {
@@ -421,6 +600,9 @@ void Z906::loop() {
 void Z906::dump_config() {
   ESP_LOGCONFIG(TAG, "Logitech Z906:\n  Console: RX GPIO%d, TX GPIO%d\n  Amplifier: RX GPIO%d, TX GPIO%d\n  Capture: %s", krx_,
                 ktx_, vrx_, vtx_, mitschnitt_ ? "on" : "off");
+  if (amp_en_ >= 0)
+    ESP_LOGCONFIG(TAG, "  Pin 15: amplifier GPIO%d (open drain), console GPIO%d\n  Mode: %s", amp_en_, kon_en_,
+                  ohne_.load() ? "without console" : "console");
 }
 
 void Z906Level::control(float value) {   // percent -> level 0..43
@@ -430,5 +612,7 @@ void Z906Input::control(size_t index) { if (parent_) parent_->eingang_setzen((in
 void Z906Effect::control(size_t index) { if (parent_) parent_->effekt_setzen((int) index); }
 void Z906StatusButton::press_action() { if (parent_) parent_->status_lesen(); }
 void Z906MitschnittButton::press_action() { if (parent_) parent_->verlauf_ausgeben(); }
+void Z906ModeSwitch::write_state(bool state) { if (parent_) parent_->modus_setzen(state); }
+void Z906PowerSwitch::write_state(bool state) { if (parent_) parent_->power_setzen(state); }
 
 }  // namespace esphome::z906
