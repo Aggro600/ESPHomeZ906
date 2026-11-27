@@ -56,7 +56,7 @@ choose entities that switch the amplifier on and off, such as IR buttons or scri
 |---|---|
 | Volume, Volume Bass, Volume Center, Volume Rear | `number`, 0–100 % (100 % = level 43) |
 | Input | `select`, Input 1 … Input 6 |
-| Effect | `select`, 3D / 2.1 / 4.1 / None – only for inputs 1, 2, 6 (digital inputs follow the signal) |
+| Effect | `select`, 3D / 2.1 / 4.1 / None – per input, digital inputs too (with a 5.1 signal the decoder ignores it) |
 | Power | `binary_sensor`, from the power-on/off sequence; after an ESP restart: console traffic = on, 75 s silence = off |
 | Read status | `button`, reads levels/input/effects from the amplifier |
 | Without console | `switch`, optional – the ESP runs the amplifier alone, the console stays off and dark (see below) |

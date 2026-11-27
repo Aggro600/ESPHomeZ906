@@ -18,7 +18,6 @@ static const uint8_t EFFEKT_CODE[4] = {0x14, 0x16, 0x15, 0x35};   // 3D, 2.1, 4.
 static const uint32_t STILLE_MS = 20;      // only inject when no byte has flowed for this long
 static const uint32_t ANTWORT_MS = 300;    // max. duration of an AA reply
 
-static bool effekt_moeglich(int eingang) { return eingang == 0 || eingang == 1 || eingang == 5; }   // analog only
 
 static bool uart_einrichten(uart_port_t port, int tx, int rx) {
   uart_config_t c = {};
@@ -343,7 +342,7 @@ void Z906::konsolenlos_(uint32_t jetzt) {
         b[n++] = 0x11;
         b[n++] = 0x11;
         if (i >= 0) b[n++] = EINGANG_CODE[i];
-        b[n++] = effekt_moeglich(i) ? EFFEKT_CODE[e >= 0 ? e : 0] : EFFEKT_CODE[3];
+        b[n++] = EFFEKT_CODE[e >= 0 ? e : 0];
         b[n++] = 0x39;   // mute off
         senden_(b, n);
         an_phase_ = 3;
@@ -516,7 +515,7 @@ void Z906::eingang_setzen(int index) {
   for (int s = 0; s < v; s++) b[n++] = 0x09;
   b[n++] = EINGANG_CODE[index];
   const int e = effekt_[index].load();
-  b[n++] = effekt_moeglich(index) ? EFFEKT_CODE[e >= 0 ? e : 0] : EFFEKT_CODE[3];
+  b[n++] = EFFEKT_CODE[e >= 0 ? e : 0];
   for (int s = 0; s < v; s++) b[n++] = 0x08;
   senden_(b, n);
 }
@@ -524,11 +523,9 @@ void Z906::eingang_setzen(int index) {
 void Z906::effekt_setzen(int index) {
   const int i = eingang_.load();
   if (index < 0 || index > 3) return;
-  if (!effekt_moeglich(i)) {
-    ESP_LOGW(TAG, "Effects only on inputs 1, 2 and 6 (digital: decided by the signal)");
-    gemeldet_effekt_ = -2;   // republish the current value
-    return;
-  }
+  // Every input keeps its own effect in the amp, digital ones too (stereo/PCM signal; with a 5.1 signal the
+  // decoder ignores it). Until 1.1.0 only inputs 1, 2, 6 were allowed - input 4 always showed "None" (2026-11-27)
+  if (i < 0) return;
   const uint8_t b[2] = {RESET_IDLE, EFFEKT_CODE[index]};
   senden_(b, 2);
 }
@@ -564,7 +561,7 @@ void Z906::loop() {
     gemeldet_eingang_ = e;
     eingang_s_->publish_state((size_t) e);
   }
-  const int8_t f = e >= 0 ? (effekt_moeglich(e) ? effekt_[e].load() : (int8_t) 3) : (int8_t) -1;
+  const int8_t f = e >= 0 ? effekt_[e].load() : (int8_t) -1;
   if (effekt_s_ != nullptr && f >= 0 && f != gemeldet_effekt_) {
     gemeldet_effekt_ = f;
     effekt_s_->publish_state((size_t) f);

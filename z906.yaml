@@ -23,7 +23,7 @@ esp32:
 
 external_components:
   # Pinned to a release tag: builds stay reproducible, a new version only arrives when you change the tag here
-  - source: github://Aggro600/ESPHomeZ906@v1.1.0
+  - source: github://Aggro600/ESPHomeZ906@v1.1.1
     components: [z906]
 
 logger:

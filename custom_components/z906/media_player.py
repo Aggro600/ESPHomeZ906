@@ -119,7 +119,7 @@ class Z906MediaPlayer(MediaPlayerEntity):
         await self._select("input", source)
 
     async def async_select_sound_mode(self, sound_mode: str) -> None:
-        """Select the effect (the amplifier applies it on inputs 1, 2 and 6)."""
+        """Select the effect of the current input (digital inputs: stereo signals only)."""
         await self._select("effect", sound_mode)
 
     async def _select(self, role: str, option: str) -> None:
